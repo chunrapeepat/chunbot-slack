@@ -3,17 +3,45 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 const firestore = admin.firestore();
 
-export const createSession = async (id: string, postedBy: string) => {
+export const getInvoiceMessage = async () => {
+  return `This is a invoice ` + Math.random();
+};
+
+export const getSession = async (sessionId: string) => {
+  const sessionRef = firestore.collection("feedme").doc(sessionId);
+  const doc = await sessionRef.get();
+
+  if (!doc.exists) {
+    return undefined;
+  }
+
+  return doc.data();
+};
+
+export const createInvoice = async (id: string, sessionId: string) => {
   return firestore.collection("payme").doc(id).set({
     id,
+    sessionId,
+    createdAt: Date.now(),
+  });
+};
+
+export const updateSessionPaymeId = async (sessionId: string, paymeId: string) => {
+  return firestore.collection("feedme").doc(sessionId).update({paymeId});
+};
+
+export const createSession = async (id: string, postedBy: string, userId: string) => {
+  return firestore.collection("feedme").doc(id).set({
+    id,
     postedBy,
+    userId,
     closed: false,
     createdAt: Date.now(),
   });
 };
 
-export const createOrder = async (id: string, sessionId: string, postedBy: string, description: string) => {
-  const sessionRef = firestore.collection("payme").doc(sessionId);
+export const createOrder = async (id: string, sessionId: string, postedBy: string, userId: string, description: string) => {
+  const sessionRef = firestore.collection("feedme").doc(sessionId);
   const doc = await sessionRef.get();
 
   if (!doc.exists) {
@@ -28,8 +56,27 @@ export const createOrder = async (id: string, sessionId: string, postedBy: strin
   return sessionRef.collection("orders").doc(id).set({
     id,
     postedBy,
+    userId,
     description,
     sessionId,
+    createdAt: Date.now(),
+  });
+};
+
+export const createPayment = async (id: string, paymeId: string, postedBy: string, userId: string, files: string[]) => {
+  const paymeRef = firestore.collection("payme").doc(paymeId);
+  const doc = await paymeRef.get();
+
+  if (!doc.exists) {
+    return;
+  }
+
+  return paymeRef.collection("payments").doc(id).set({
+    id,
+    paymeId,
+    postedBy,
+    userId,
+    files,
     createdAt: Date.now(),
   });
 };
