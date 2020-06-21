@@ -11,7 +11,7 @@ const sendMessage = (channel: string, text: string) => {
   return bot.chat.postMessage({
     channel,
     text,
-  })
+  });
 };
 
 export const myBot = functions.https.onRequest(async (req, res) => {
@@ -38,7 +38,7 @@ export const slackChannel = functions.pubsub.topic('slack-channel')
     if (channel.ok && channel.channel.name === 'feed-me') {
       if (event.type === 'app_mention') {
         await createSession(event.event_ts, user.profile.real_name);
-        await sendMessage("#feed-me", `Session ID: ${event.event_ts}`);
+        await sendMessage("#feed-me", `Session ID: ${event.event_ts} (<@${event.user}>`);
       }
       if (event.type === 'message' && event.thread_ts !== undefined) {
         await createOrder(event.event_ts, event.thread_ts, user.profile.real_name, event.text);
