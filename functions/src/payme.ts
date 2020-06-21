@@ -3,8 +3,22 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 const firestore = admin.firestore();
 
-export const getInvoiceMessage = async () => {
-  return `This is a invoice ` + Math.random();
+export const getInvoiceMessage = async (session: any) => {
+  const {statement} = session;
+  return `ร้านอาหาร: ${statement.restaurant}, Promptpay: ${statement.promptpay} (<@${session.userId}>)
+ค่าส่ง: ${statement.shipping}บาท (ราคาด้านล่างนี้รวมค่าส่งแล้ว)
+  
+😡 <@${session.userId}> 50 + 20 = 70  
+😡 <@${session.userId}> 50 + 20 = 70  
+😡 <@${session.userId}> 50 + 20 = 70  
+😡 <@${session.userId}> 50 + 20 = 70  
+✅ <@${session.userId}> 50 + 20 = 70  
+✅ <@${session.userId}> 50 + 20 = 70  
+✅ <@${session.userId}> 50 + 20 = 70  
+
+${statement.note || ""}
+https://promptpay.io/${statement.promptpay}
+`
 };
 
 export const getSession = async (sessionId: string) => {

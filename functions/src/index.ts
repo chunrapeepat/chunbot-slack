@@ -6,7 +6,7 @@ import {
   createInvoice,
   createOrder, createPayment,
   createSession,
-  getInvoiceMessage,
+  getInvoiceMessage, getSession,
   updateSessionPaymeId
 } from "./payme";
 
@@ -52,13 +52,13 @@ export const sendInvoice = functions.firestore.document(`feedme/{sessionId}`).on
     return;
   }
 
-  const messageResponse: any = await sendMessage('#pay-me', await getInvoiceMessage());
-  if (!messageResponse.ok || !messageResponse.ts) {
-    console.error(`Error: send message error`);
-    return;
-  }
-
   if (session.statement !== sessionBefore.statement && session.closed !== sessionBefore.closed) {
+    const messageResponse: any = await sendMessage('#pay-me', await getInvoiceMessage(session));
+    if (!messageResponse.ok || !messageResponse.ts) {
+      console.error(`Error: send message error`);
+      return;
+    }
+
     await createInvoice(messageResponse.ts, session.id);
     await updateSessionPaymeId(session.id, messageResponse.ts);
   } else {
@@ -87,7 +87,7 @@ export const slackChannel = functions.pubsub.topic('slack-channel')
     if (channel.ok && channel.channel.name === 'pay-me') {
       if (event.type === 'message' && event.thread_ts !== undefined && event.files !== undefined) {
         await createPayment(event.event_ts, event.thread_ts, user.profile.real_name, event.user, event.files.map((f: any) => f.url_private));
-        await updateMessage(event.channel, event.thread_ts, await getInvoiceMessage());
+        await updateMessage(event.channel, event.thread_ts, await getInvoiceMessage(await getSession(event.thread_ts)));
       };
     };
   });
