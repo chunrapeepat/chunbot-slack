@@ -28,6 +28,14 @@ const updateMessage = (channel: string, ts: string, text: string) => {
   });
 };
 
+const getUsers = async () => {
+  const queryUsers = await bot.users.list();
+  if (queryUsers.ok) {
+    return queryUsers.members as any[];
+  } else {
+    return [];
+  }
+}
 
 export const myBot = functions.https.onRequest(async (req, res) => {
   const data = JSON.stringify(req.body);
@@ -53,7 +61,8 @@ export const sendInvoice = functions.firestore.document(`feedme/{sessionId}`).on
   }
 
   if (session.statement !== sessionBefore.statement && session.closed !== sessionBefore.closed) {
-    const messageResponse: any = await sendMessage('#pay-me', await getInvoiceMessage(session, []));
+    const users: any[] = await getUsers();
+    const messageResponse: any = await sendMessage('#pay-me', await getInvoiceMessage(session, [], users));
     if (!messageResponse.ok || !messageResponse.ts) {
       console.error(`Error: send message error`);
       return;
@@ -93,7 +102,8 @@ export const slackChannel = functions.pubsub.topic('slack-channel')
         const payments = await getPayments(event.thread_ts);
         const session: any = await getSession(payme.sessionId);
 
-        await updateMessage(event.channel, event.thread_ts, await getInvoiceMessage(session, payments));
+        const users: any[] = await getUsers();
+        await updateMessage(event.channel, event.thread_ts, await getInvoiceMessage(session, payments, users));
       };
     };
   });

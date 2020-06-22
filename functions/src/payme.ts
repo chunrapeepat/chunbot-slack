@@ -19,7 +19,7 @@ export const getPayments = async (paymeId: string) => {
   return payments;
 };
 
-const renderOrders = (orders: any[], shipping: number, payments: any[]) => {
+const renderOrders = (orders: any[], shipping: number, payments: any[], users: any[]) => {
   let output = '';
 
   const map = orders.reduce((result, curr) => {
@@ -31,23 +31,31 @@ const renderOrders = (orders: any[], shipping: number, payments: any[]) => {
   Object.keys(map).forEach(username => {
     const total = map[username].reduce((a: number, b: number) => a + b, 0);
     const isPaid = payments.filter(p => p.postedBy === username).length > 0;
-    output += `${isPaid ? '✅' : '😡'} <@${username}> ${Math.ceil(total + (+shipping))}\n`;
+    const user = users.find(u => u.name === username || u.real_name === username || u.profile.real_name === username || u.profile.display_name === username);
+    let mention = '';
+    if (!user) {
+      mention = `@${username}`;
+    } else {
+      mention = `<@${user.id}>`
+    }
+
+    output += `${isPaid ? '✅' : '😡'} ${mention} ${Math.ceil(total + (+shipping))}\n`;
   });
 
   return output;
 };
 
-export const getInvoiceMessage = async (session: any, payments: any[]) => {
+export const getInvoiceMessage = async (session: any, payments: any[], users: any[]) => {
   const {statement} = session;
   const orders = statement.orders;
 
   return `ร้านอาหาร: ${statement.restaurant}, Promptpay: ${statement.promptpay} (<@${session.userId}>)
 ค่าส่ง: ${statement.shipping}บาท (ราคาด้านล่างนี้รวมค่าส่งแล้ว)
   
-${renderOrders(orders, statement.shipping / orders.length, payments)}
+${renderOrders(orders, statement.shipping / orders.length, payments, users)}
 
-Note: ${statement.note || ""} (${Math.random()})
-https://promptpay.io/${statement.promptpay}
+Note: ${statement.note || ""} (${session.id})
+Promptpay Scan: https://promptpay.io/${statement.promptpay}
 `
 };
 
