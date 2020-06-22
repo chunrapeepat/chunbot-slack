@@ -3,22 +3,63 @@ import * as admin from 'firebase-admin';
 admin.initializeApp();
 const firestore = admin.firestore();
 
-export const getInvoiceMessage = async (session: any) => {
+export const getPayments = async (paymeId: string) => {
+  const ref = firestore.collection("payme").doc(paymeId).collection("payments");
+  const snapshot = await ref.get();
+
+  if (snapshot.empty) {
+    return [];
+  }
+
+  const payments: any[] = [];
+  snapshot.forEach(doc => {
+    payments.push(doc.data());
+  });
+
+  return payments;
+};
+
+const renderOrders = (orders: any[], shipping: number, payments: any[]) => {
+  let output = '';
+
+  const map = orders.reduce((result, curr) => {
+    if (!result[curr.username]) result[curr.username] = [];
+    result[curr.username].push(+curr.charge);
+    return result;
+  }, {});
+
+  Object.keys(map).forEach(username => {
+    const total = map[username].reduce((a: number, b: number) => a + b, 0);
+    const isPaid = payments.filter(p => p.postedBy === username).length > 0;
+    output += `${isPaid ? '✅' : '😡'} <@${username}> ${Math.ceil(total + (+shipping))}\n`;
+  });
+
+  return output;
+};
+
+export const getInvoiceMessage = async (session: any, payments: any[]) => {
   const {statement} = session;
+  const orders = statement.orders;
+
   return `ร้านอาหาร: ${statement.restaurant}, Promptpay: ${statement.promptpay} (<@${session.userId}>)
 ค่าส่ง: ${statement.shipping}บาท (ราคาด้านล่างนี้รวมค่าส่งแล้ว)
   
-😡 <@${session.userId}> 50 + 20 = 70  
-😡 <@${session.userId}> 50 + 20 = 70  
-😡 <@${session.userId}> 50 + 20 = 70  
-😡 <@${session.userId}> 50 + 20 = 70  
-✅ <@${session.userId}> 50 + 20 = 70  
-✅ <@${session.userId}> 50 + 20 = 70  
-✅ <@${session.userId}> 50 + 20 = 70  
+${renderOrders(orders, statement.shipping / orders.length, payments)}
 
-${statement.note || ""}
+Note: ${statement.note || ""} (${Math.random()})
 https://promptpay.io/${statement.promptpay}
 `
+};
+
+export const getPayme = async (paymeId: string) => {
+  const paymeRef = firestore.collection("payme").doc(paymeId);
+  const doc = await paymeRef.get();
+
+  if (!doc.exists) {
+    return undefined;
+  }
+
+  return doc.data();
 };
 
 export const getSession = async (sessionId: string) => {
