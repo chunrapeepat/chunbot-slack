@@ -27,7 +27,8 @@ const renderOrdersWithTopup = async (
   orders: any[],
   shipping: number,
   payments: any[],
-  users: any[]
+  users: any[],
+  isUpdate: boolean
 ) => {
   let output = "";
 
@@ -40,27 +41,29 @@ const renderOrdersWithTopup = async (
   const outputs = await Promise.all(
     Object.keys(map).map(async (username) => {
       const total = map[username].reduce((a: number, b: number) => a + b, 0);
-      let isPrepaid = false;
-      try {
-        await Axios.post(
-          "https://pang-wallet-service-4r4kliwroa-as.a.run.app/create-debt",
-          {
-            creditorId: PANG_USERNAME,
-            debtorId: username,
-            amount: total + +shipping,
-            note: "created by chunbot",
-          },
-          {
-            headers: {
-              "x-api-key": "earth",
-            },
-          }
-        );
-        isPrepaid = true;
-      } catch (error) {
-        isPrepaid = false;
-      }
       const isPaid = payments.filter((p) => p.postedBy === username).length > 0;
+      let isPrepaid = isUpdate;
+      if (!isUpdate) {
+        try {
+          await Axios.post(
+            "https://pang-wallet-service-4r4kliwroa-as.a.run.app/create-debt",
+            {
+              creditorId: PANG_USERNAME,
+              debtorId: username,
+              amount: total + +shipping,
+              note: "created by chunbot",
+            },
+            {
+              headers: {
+                "x-api-key": "earth",
+              },
+            }
+          );
+          isPrepaid = true;
+        } catch (error) {
+          isPrepaid = false;
+        }
+      }
       const user = users.find(
         (u) =>
           u.name === username ||
@@ -129,7 +132,8 @@ const renderOrders = (
 export const getInvoiceMessage = async (
   session: any,
   payments: any[],
-  users: any[]
+  users: any[],
+  isUpdate: boolean = false
 ) => {
   const { statement } = session;
   const orders = statement.orders;
@@ -139,7 +143,8 @@ export const getInvoiceMessage = async (
       orders,
       statement.shipping / orders.length,
       payments,
-      users
+      users,
+      isUpdate
     );
   } else {
     orderMessage = renderOrders(
