@@ -5,7 +5,7 @@ admin.initializeApp();
 const firestore = admin.firestore();
 
 const PANG_USER_ID = "USGBWTJDA";
-const PANG_USERNAME = "Chanissa Trithipkaiwanpon";
+// const PANG_USERNAME = "Chanissa Trithipkaiwanpon";
 
 export const getPayments = async (paymeId: string) => {
   const ref = firestore.collection("payme").doc(paymeId).collection("payments");
@@ -28,7 +28,9 @@ const renderOrdersWithTopup = async (
   shipping: number,
   payments: any[],
   users: any[],
-  isUpdate: boolean
+  isUpdate: boolean,
+  alreadyPaidUser: any[],
+  session: any
 ) => {
   let output = "";
 
@@ -37,56 +39,55 @@ const renderOrdersWithTopup = async (
     result[curr.username].push(+curr.charge);
     return result;
   }, {});
-
-  const outputs = await Promise.all(
-    Object.keys(map).map(async (username) => {
-      const total = map[username].reduce((a: number, b: number) => a + b, 0);
-      const isPaid = payments.filter((p) => p.postedBy === username).length > 0;
-      let isPrepaid = isUpdate;
-      if (!isUpdate) {
-        try {
-          await Axios.post(
-            "https://pang-wallet-service-4r4kliwroa-as.a.run.app/create-debt",
-            {
-              creditorId: PANG_USERNAME,
-              debtorId: username,
-              amount: total + +shipping,
-              note: "created by chunbot",
-            },
-            {
-              headers: {
-                "x-api-key": "earth",
-              },
-            }
-          );
-          isPrepaid = true;
-        } catch (error) {
-          isPrepaid = false;
-        }
-      }
-      const user = users.find(
-        (u) =>
-          u.name === username ||
-          u.real_name === username ||
-          u.profile.real_name === username ||
-          u.profile.display_name === username
-      );
-      let mention = "";
-      if (!user) {
-        mention = `@${username}`;
-      } else {
-        mention = `<@${user.id}>`;
-      }
-      if (isPrepaid)
-        return `✅ 🎖 ${mention} ${Math.ceil(
-          total + +shipping
-        )} 🎖 paid by pre-paid feature 🎖`;
-      return `${isPaid ? "✅" : "😡"} ${mention} ${Math.ceil(
-        total + +shipping
-      )}`;
-    })
+  const fullPayment = [...payments, ...alreadyPaidUser];
+  const topupUsersResponse = await Axios.get(
+    "https://pang-wallet-service-4r4kliwroa-as.a.run.app/users",
+    {
+      headers: {
+        "x-api-key": "earth",
+      },
+    }
   );
+  let sumPrepaid = 0;
+
+  const outputs = Object.keys(map).map((username) => {
+    const total = map[username].reduce((a: number, b: number) => a + b, 0);
+    const isPaid =
+      fullPayment.filter((p) => p.postedBy === username).length > 0;
+    let isPrepaid = false;
+
+    try {
+      const prepaidUsers = topupUsersResponse.data.users;
+
+      isPrepaid = !!prepaidUsers.find((u: any) => u.slack_id === username);
+    } catch (error) {
+      isPrepaid = false;
+    }
+
+    const user = users.find(
+      (u) =>
+        u.name === username ||
+        u.real_name === username ||
+        u.profile.real_name === username ||
+        u.profile.display_name === username
+    );
+    let mention = "";
+    if (!user) {
+      mention = `@${username}`;
+    } else {
+      mention = `<@${user.id}>`;
+    }
+    if (isPrepaid) {
+      if (isPaid || session.createdAt < 1602555800125) {
+        sumPrepaid += Math.ceil(total + +shipping);
+        return `✅ ${mention} ${Math.ceil(total + +shipping)} 🎖 pre-paid 🎖`;
+      } else
+        return `😡 ${mention} ${Math.ceil(total + +shipping)} 🎖 pre-paid 🎖`;
+    }
+    return `${isPaid ? "✅" : "😡"} ${mention} ${Math.ceil(total + +shipping)}`;
+  });
   output = outputs.join("\n");
+  output += `\n\n💰 Total pre-paid: ${sumPrepaid}`;
 
   return output;
 };
@@ -97,7 +98,6 @@ const renderOrders = (
   users: any[]
 ) => {
   let output = "";
-
   const map = orders.reduce((result, curr) => {
     if (!result[curr.username]) result[curr.username] = [];
     result[curr.username].push(+curr.charge);
@@ -129,22 +129,62 @@ const renderOrders = (
   return output;
 };
 
+export const getExpenseSummary = (payments: any[] = []) => {
+  const sumAmount = payments.reduce((sum, p) => {
+    return sum + p.cost;
+  }, 0);
+  let message = `expense splitwise \n ${payments.length} รายการ ราคารวม ${sumAmount} THB \n`;
+  payments.forEach((p) => {
+    message += `@${p.postedBy} >>> ${p.expenseId} ราคา ${p.cost}\n`;
+  });
+  return message;
+};
+export const getSummaryMessage = async () => {
+  const groupResponse = await Axios.get(
+    "https://pang-wallet-service-4r4kliwroa-as.a.run.app/group",
+    {
+      headers: {
+        "x-api-key": "earth",
+      },
+    }
+  );
+  const groupMembers = (groupResponse.data?.group?.members || []) as any[];
+  let message = "สรุปยอดเงินคงเหลือ splitwise \n";
+  groupMembers
+    .filter((mem) => mem.first_name !== "Chanissa")
+    .sort((a, b) => {
+      return Number(a.balance[0].amount) - Number(b.balance[0].amount);
+    })
+    .forEach((member) => {
+      const { first_name, balance } = member;
+      const money = balance[0].amount;
+      const icon = money < 100 ? (money < 0 ? "🚨" : "💣") : "🏦";
+      message += `${icon} @${first_name}  total ${money} (${
+        money < 100 ? (money < 0 ? "เงินหมดแล้ววววว" : "เงินใกล้หมด") : ""
+      })\n`;
+    });
+  return message;
+};
+
 export const getInvoiceMessage = async (
   session: any,
   payments: any[],
   users: any[],
-  isUpdate: boolean = false
+  isUpdate: boolean = false,
+  alreadyPaidUser = []
 ) => {
   const { statement } = session;
   const orders = statement.orders;
   let orderMessage = "";
-  if (session.userId == PANG_USER_ID) {
+  if (session.userId === PANG_USER_ID) {
     orderMessage = await renderOrdersWithTopup(
       orders,
       statement.shipping / orders.length,
       payments,
       users,
-      isUpdate
+      isUpdate,
+      alreadyPaidUser,
+      session
     );
   } else {
     orderMessage = renderOrders(
@@ -252,7 +292,8 @@ export const createPayment = async (
   paymeId: string,
   postedBy: string,
   userId: string,
-  files: string[]
+  files: string[],
+  description: string = ""
 ) => {
   const paymeRef = firestore.collection("payme").doc(paymeId);
   const doc = await paymeRef.get();
@@ -267,6 +308,7 @@ export const createPayment = async (
     postedBy,
     userId,
     files,
+    description,
     createdAt: Date.now(),
   });
 };

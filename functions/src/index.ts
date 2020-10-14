@@ -7,12 +7,18 @@ import {
   createOrder,
   createPayment,
   createSession,
+  getExpenseSummary,
   getInvoiceMessage,
   getPayme,
   getPayments,
   getSession,
+  getSummaryMessage,
   updateSessionPaymeId,
 } from "./payme";
+import Axios from "axios";
+
+const PANG_USER_ID = "USGBWTJDA";
+const PANG_USERNAME = "Chanissa Trithipkaiwanpon";
 
 const bot = new WebClient(functions.config().slack.token);
 const pubsubClient = new PubSub();
@@ -20,6 +26,13 @@ const pubsubClient = new PubSub();
 const sendMessage = (channel: string, text: string) => {
   return bot.chat.postMessage({
     channel,
+    text,
+  });
+};
+const replyMessage = (channel: string, thread_ts: string, text: string) => {
+  return bot.chat.postMessage({
+    channel,
+    thread_ts,
     text,
   });
 };
@@ -68,21 +81,97 @@ export const sendInvoice = functions.firestore
       );
       return;
     }
-
+    await Axios.get(
+      "https://pang-wallet-service-4r4kliwroa-as.a.run.app/group",
+      {
+        headers: {
+          "x-api-key": "earth",
+        },
+      }
+    );
     if (
       session.statement !== sessionBefore.statement &&
       session.closed !== sessionBefore.closed
     ) {
       const users: any[] = await getUsers();
+      let paymentSuccessUser: any = [];
+      // auto payment via pang wallet
+      if (session.userId === PANG_USER_ID) {
+        const { statement } = session;
+        const orders = statement.orders;
+        const map = orders.reduce((result: any, curr: any) => {
+          if (!result[curr.username]) result[curr.username] = [];
+          result[curr.username].push(+curr.charge);
+          return result;
+        }, {});
+        paymentSuccessUser = await Promise.all(
+          Object.keys(map).map(async (username) => {
+            const total = map[username].reduce(
+              (a: number, b: number) => a + b,
+              0
+            );
+            const shipping = statement.shipping / orders.length;
+            try {
+              const response = await Axios.post(
+                "https://pang-wallet-service-4r4kliwroa-as.a.run.app/create-debt",
+                {
+                  creditorId: PANG_USERNAME,
+                  debtorId: username,
+                  amount: Math.ceil(total + +shipping),
+                  note: `${session.statement.restaurant} | ${username}`,
+                },
+                {
+                  headers: {
+                    "x-api-key": "earth",
+                  },
+                }
+              );
+              await createPayment(
+                String(new Date().getTime),
+                String(new Date().getTime),
+                username,
+                username,
+                [],
+                "prepaid id: " + response.data.debt.id
+              );
+              return {
+                expenseId: response.data.debt.id,
+                postedBy: username,
+                cost: Number(response.data.debt.cost),
+              };
+            } catch (error) {
+              return "";
+            }
+          })
+        );
+      }
+
       const messageResponse: any = await sendMessage(
         "#pay-me",
-        await getInvoiceMessage(session, [], users, false)
+        await getInvoiceMessage(session, [], users, false, paymentSuccessUser)
       );
       if (!messageResponse.ok || !messageResponse.ts) {
         console.error(`Error: send message error`);
         return;
       }
-
+      if (session.userId === PANG_USER_ID) {
+        try {
+          await replyMessage(
+            "#pay-me",
+            messageResponse.ts,
+            getExpenseSummary(paymentSuccessUser)
+          );
+        } catch (error) {}
+        const summaryMessageResponse: any = await replyMessage(
+          "#pay-me",
+          messageResponse.ts,
+          await getSummaryMessage()
+        );
+        if (!summaryMessageResponse.ok || !summaryMessageResponse.ts) {
+          console.error(`Error: send message error`);
+          return;
+        }
+      }
       await createInvoice(messageResponse.ts, session.id);
       await updateSessionPaymeId(session.id, messageResponse.ts);
     } else {
