@@ -110,14 +110,16 @@ export const sendInvoice = functions.firestore
               (a: number, b: number) => a + b,
               0
             );
-            const shipping = statement.shipping / orders.length;
+            const additional =
+              Number(statement.shipping) / orders.length -
+              Number(statement?.discount) / (orders.length + 1);
             try {
               const response = await Axios.post(
                 "https://pang-wallet-service-4r4kliwroa-as.a.run.app/create-debt",
                 {
                   creditorId: PANG_USERNAME,
                   debtorId: username,
-                  amount: Math.ceil(total + +shipping),
+                  amount: Math.ceil(total + +additional),
                   note: `${session.statement.restaurant} | ${username}`,
                 },
                 {
@@ -128,7 +130,7 @@ export const sendInvoice = functions.firestore
               );
               await createPayment(
                 String(new Date().getTime),
-                String(new Date().getTime),
+                session.id,
                 username,
                 username,
                 [],
@@ -194,7 +196,7 @@ export const slackChannel = functions.pubsub
         await createSession(event.event_ts, user.profile.real_name, event.user);
         await sendMessage(
           "#feed-me",
-          `Session ID: ${event.event_ts} (<@${event.user}>`
+          `Session ID: ${event.event_ts} (<@${event.user}> \nUrl: https://payme.thechun.dev/${event.event_ts}`
         );
       }
       if (event.type === "message" && event.thread_ts !== undefined) {

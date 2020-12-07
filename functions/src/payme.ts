@@ -25,7 +25,7 @@ export const getPayments = async (paymeId: string) => {
 
 const renderOrdersWithTopup = async (
   orders: any[],
-  shipping: number,
+  additional: number,
   payments: any[],
   users: any[],
   isUpdate: boolean,
@@ -77,14 +77,17 @@ const renderOrdersWithTopup = async (
     } else {
       mention = `<@${user.id}>`;
     }
+    console.log(mention + " is Prepaid >> " + isPrepaid);
     if (isPrepaid) {
-      if (isPaid || session.createdAt < 1602555800125) {
-        sumPrepaid += Math.ceil(total + +shipping);
-        return `✅ ${mention} ${Math.ceil(total + +shipping)} 🎖 pre-paid 🎖`;
-      } else
-        return `😡 ${mention} ${Math.ceil(total + +shipping)} 🎖 pre-paid 🎖`;
+      sumPrepaid += Math.ceil(total + +additional);
+      return `✅ ${mention} ${Math.ceil(total + +additional)} 🎖 pre-paid 🎖`;
+      // if (isPaid || session.createdAt < 1602555800125) {
+      // } else
+      //   return `😡 ${mention} ${Math.ceil(total + +additional)} 🎖 pre-paid 🎖`;
     }
-    return `${isPaid ? "✅" : "😡"} ${mention} ${Math.ceil(total + +shipping)}`;
+    return `${isPaid ? "✅" : "😡"} ${mention} ${Math.ceil(
+      total + +additional
+    )}`;
   });
   output = outputs.join("\n");
   output += `\n\n💰 Total pre-paid: ${sumPrepaid}`;
@@ -93,7 +96,7 @@ const renderOrdersWithTopup = async (
 };
 const renderOrders = (
   orders: any[],
-  shipping: number,
+  additional: number,
   payments: any[],
   users: any[]
 ) => {
@@ -122,7 +125,7 @@ const renderOrders = (
     }
 
     output += `${isPaid ? "✅" : "😡"} ${mention} ${Math.ceil(
-      total + +shipping
+      total + +additional
     )}\n`;
   });
 
@@ -130,13 +133,19 @@ const renderOrders = (
 };
 
 export const getExpenseSummary = (payments: any[] = []) => {
-  const sumAmount = payments.reduce((sum, p) => {
-    return sum + p.cost;
-  }, 0);
-  let message = `expense splitwise \n ${payments.length} รายการ ราคารวม ${sumAmount} THB \n`;
-  payments.forEach((p) => {
-    message += `@${p.postedBy} >>> ${p.expenseId} ราคา ${p.cost}\n`;
-  });
+  const sumAmount = payments
+    .filter((p) => !!p?.cost)
+    .reduce((sum, p) => {
+      return sum + p.cost;
+    }, 0);
+  let message = `expense splitwise \n ${
+    payments.filter((p) => !!p?.cost).length
+  } รายการ ราคารวม ${sumAmount} THB \n`;
+  payments
+    .filter((p) => !!p?.cost)
+    .forEach((p) => {
+      message += `@${p.postedBy} >>> ${p.expenseId} ราคา ${p.cost}\n`;
+    });
   return message;
 };
 export const getSummaryMessage = async () => {
@@ -153,7 +162,7 @@ export const getSummaryMessage = async () => {
   groupMembers
     .filter((mem) => mem.first_name !== "Chanissa")
     .sort((a, b) => {
-      return Number(a.balance[0].amount) - Number(b.balance[0].amount);
+      return Number(a.balance[0]?.amount) - Number(b.balance[0]?.amount);
     })
     .forEach((member) => {
       const { first_name, balance } = member;
@@ -176,10 +185,13 @@ export const getInvoiceMessage = async (
   const { statement } = session;
   const orders = statement.orders;
   let orderMessage = "";
+  const additional =
+    Number(statement.shipping) / orders.length -
+    Number(statement?.discount) / (orders.length + 1);
   if (session.userId === PANG_USER_ID) {
     orderMessage = await renderOrdersWithTopup(
       orders,
-      statement.shipping / orders.length,
+      additional,
       payments,
       users,
       isUpdate,
@@ -187,12 +199,7 @@ export const getInvoiceMessage = async (
       session
     );
   } else {
-    orderMessage = renderOrders(
-      orders,
-      statement.shipping / orders.length,
-      payments,
-      users
-    );
+    orderMessage = renderOrders(orders, additional, payments, users);
   }
 
   return `ร้านอาหาร: ${statement.restaurant}, Promptpay: ${
