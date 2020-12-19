@@ -1,10 +1,12 @@
 import Axios from "axios";
 import * as admin from "firebase-admin";
+import { logMessage } from "./logger";
 
 admin.initializeApp();
 const firestore = admin.firestore();
 
 const PANG_USER_ID = "USGBWTJDA";
+const EARTH_USER_ID = "USGRNF55K";
 // const PANG_USERNAME = "Chanissa Trithipkaiwanpon";
 
 export const getPayments = async (paymeId: string) => {
@@ -40,13 +42,10 @@ const renderOrdersWithTopup = async (
     return result;
   }, {});
   const fullPayment = [...payments, ...alreadyPaidUser];
+  logMessage("fullPAyment >>>" + JSON.stringify(fullPayment));
+  logMessage("payer >>>" + JSON.stringify(Object.keys(map)));
   const topupUsersResponse = await Axios.get(
-    "https://pang-wallet-service-4r4kliwroa-as.a.run.app/users",
-    {
-      headers: {
-        "x-api-key": "earth",
-      },
-    }
+    "https://asia-east2-pang-wallet.cloudfunctions.net/users"
   );
   let sumPrepaid = 0;
 
@@ -150,17 +149,15 @@ export const getExpenseSummary = (payments: any[] = []) => {
 };
 export const getSummaryMessage = async () => {
   const groupResponse = await Axios.get(
-    "https://pang-wallet-service-4r4kliwroa-as.a.run.app/group",
-    {
-      headers: {
-        "x-api-key": "earth",
-      },
-    }
+    "https://asia-east2-pang-wallet.cloudfunctions.net/group"
   );
   const groupMembers = (groupResponse.data?.group?.members || []) as any[];
+
   let message = "สรุปยอดเงินคงเหลือ splitwise \n";
   groupMembers
-    .filter((mem) => mem.first_name !== "Chanissa")
+    .filter(
+      (mem) => mem.first_name !== "Chanissa" && Boolean(mem.balance[0]?.amount)
+    )
     .sort((a, b) => {
       return Number(a.balance[0]?.amount) - Number(b.balance[0]?.amount);
     })
@@ -188,7 +185,8 @@ export const getInvoiceMessage = async (
   const additional =
     Number(statement.shipping) / orders.length -
     Number(statement?.discount) / (orders.length + 1);
-  if (session.userId === PANG_USER_ID) {
+  if (session.userId === PANG_USER_ID || session.userId === EARTH_USER_ID) {
+    logMessage("prepaid user naa >>>" + session.userId);
     orderMessage = await renderOrdersWithTopup(
       orders,
       additional,
